@@ -40,6 +40,8 @@ public class ComputerDatabaseManager {
 
     private static final String MAC_ADDRESS_COLUMN_NAME = "MacAddress";
     private static final String SERVER_CERT_COLUMN_NAME = "ServerCert";
+    private static final String WAKE_METHOD_COLUMN_NAME = "WakeMethod";
+    private static final String HTTP_WAKE_URL_COLUMN_NAME = "HttpWakeUrl";
 
     private SQLiteDatabase computerDb;
 
@@ -65,6 +67,22 @@ public class ComputerDatabaseManager {
                 "CREATE TABLE IF NOT EXISTS %s(%s TEXT PRIMARY KEY, %s TEXT NOT NULL, %s TEXT NOT NULL, %s TEXT, %s TEXT)",
                 COMPUTER_TABLE_NAME, COMPUTER_UUID_COLUMN_NAME, COMPUTER_NAME_COLUMN_NAME,
                 ADDRESSES_COLUMN_NAME, MAC_ADDRESS_COLUMN_NAME, SERVER_CERT_COLUMN_NAME));
+
+        // Add new columns for HTTP wake support (ignore errors if columns already exist)
+        try {
+            computerDb.execSQL(String.format((Locale)null,
+                    "ALTER TABLE %s ADD COLUMN %s INTEGER DEFAULT 0",
+                    COMPUTER_TABLE_NAME, WAKE_METHOD_COLUMN_NAME));
+        } catch (SQLiteException e) {
+            // Column already exists
+        }
+        try {
+            computerDb.execSQL(String.format((Locale)null,
+                    "ALTER TABLE %s ADD COLUMN %s TEXT",
+                    COMPUTER_TABLE_NAME, HTTP_WAKE_URL_COLUMN_NAME));
+        } catch (SQLiteException e) {
+            // Column already exists
+        }
 
         // Move all computers from the old DB (if any) to the new one
         List<ComputerDetails> oldComputers = LegacyDatabaseReader.migrateAllComputers(c);
@@ -135,6 +153,11 @@ public class ComputerDatabaseManager {
             values.put(SERVER_CERT_COLUMN_NAME, (byte[])null);
             e.printStackTrace();
         }
+
+        // Wake configuration
+        values.put(WAKE_METHOD_COLUMN_NAME, details.wakeMethod.ordinal());
+        values.put(HTTP_WAKE_URL_COLUMN_NAME, details.httpWakeUrl);
+
         return -1 != computerDb.insertWithOnConflict(COMPUTER_TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
@@ -176,6 +199,19 @@ public class ComputerDatabaseManager {
 
         // This signifies we don't have dynamic state (like pair state)
         details.state = ComputerDetails.State.UNKNOWN;
+
+        // Wake configuration
+        int wakeMethodIndex = c.getColumnIndex(WAKE_METHOD_COLUMN_NAME);
+        if (wakeMethodIndex >= 0 && !c.isNull(wakeMethodIndex)) {
+            int wakeMethodOrdinal = c.getInt(wakeMethodIndex);
+            if (wakeMethodOrdinal >= 0 && wakeMethodOrdinal < ComputerDetails.WakeMethod.values().length) {
+                details.wakeMethod = ComputerDetails.WakeMethod.values()[wakeMethodOrdinal];
+            }
+        }
+        int httpWakeUrlIndex = c.getColumnIndex(HTTP_WAKE_URL_COLUMN_NAME);
+        if (httpWakeUrlIndex >= 0 && !c.isNull(httpWakeUrlIndex)) {
+            details.httpWakeUrl = c.getString(httpWakeUrlIndex);
+        }
 
         return details;
     }

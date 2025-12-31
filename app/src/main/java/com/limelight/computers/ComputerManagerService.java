@@ -303,6 +303,19 @@ public class ComputerManagerService extends Service {
                 }
             }
         }
+
+        public void updateWakeConfig(ComputerDetails computer) {
+            synchronized (pollingTuples) {
+                for (PollingTuple tuple : pollingTuples) {
+                    if (computer.uuid.equals(tuple.computer.uuid)) {
+                        // Update the wake configuration in the in-memory computer
+                        tuple.computer.wakeMethod = computer.wakeMethod;
+                        tuple.computer.httpWakeUrl = computer.httpWakeUrl;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     @Override

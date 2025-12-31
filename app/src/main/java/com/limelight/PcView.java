@@ -6,6 +6,7 @@ import java.net.UnknownHostException;
 
 import com.limelight.binding.PlatformBinding;
 import com.limelight.binding.crypto.AndroidCryptoProvider;
+import com.limelight.computers.ComputerDatabaseManager;
 import com.limelight.computers.ComputerManagerListener;
 import com.limelight.computers.ComputerManagerService;
 import com.limelight.grid.PcGridAdapter;
@@ -30,7 +31,9 @@ import com.limelight.utils.UiHelper;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.app.Service;
+import android.content.DialogInterface;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
@@ -49,8 +52,13 @@ import android.view.View.OnClickListener;
 import android.widget.AbsListView;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
+import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.AdapterView.AdapterContextMenuInfo;
 
@@ -119,6 +127,7 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
     private final static int FULL_APP_LIST_ID = 9;
     private final static int TEST_NETWORK_ID = 10;
     private final static int GAMESTREAM_EOL_ID = 11;
+    private final static int CONFIGURE_WAKE_ID = 12;
 
     private void initializeViews() {
         setContentView(R.layout.activity_pc_view);
@@ -380,8 +389,9 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         }
 
         menu.add(Menu.NONE, TEST_NETWORK_ID, 5, getResources().getString(R.string.pcview_menu_test_network));
-        menu.add(Menu.NONE, DELETE_ID, 6, getResources().getString(R.string.pcview_menu_delete_pc));
-        menu.add(Menu.NONE, VIEW_DETAILS_ID, 7,  getResources().getString(R.string.pcview_menu_details));
+        menu.add(Menu.NONE, CONFIGURE_WAKE_ID, 6, getResources().getString(R.string.pcview_menu_configure_wake));
+        menu.add(Menu.NONE, DELETE_ID, 7, getResources().getString(R.string.pcview_menu_delete_pc));
+        menu.add(Menu.NONE, VIEW_DETAILS_ID, 8,  getResources().getString(R.string.pcview_menu_details));
     }
 
     @Override
@@ -503,7 +513,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             return;
         }
 
-        if (computer.macAddress == null) {
+        // MAC address is only required for standard WOL, not HTTP wake
+        if (computer.wakeMethod != ComputerDetails.WakeMethod.HTTP && computer.macAddress == null) {
             Toast.makeText(PcView.this, getResources().getString(R.string.wol_no_mac), Toast.LENGTH_SHORT).show();
             return;
         }
@@ -513,7 +524,7 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             public void run() {
                 String message;
                 try {
-                    WakeOnLanSender.sendWolPacket(computer);
+                    WakeOnLanSender.sendWakePacket(computer);
                     message = getResources().getString(R.string.wol_waking_msg);
                 } catch (IOException e) {
                     message = getResources().getString(R.string.wol_fail);
@@ -528,6 +539,104 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
                 });
             }
         }).start();
+    }
+
+    private void showConfigureWakeDialog(final ComputerDetails computer) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(getString(R.string.pcview_configure_wake_title, computer.name));
+
+        // Create the dialog layout programmatically
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        // Radio group for wake method selection
+        final RadioGroup wakeMethodGroup = new RadioGroup(this);
+        wakeMethodGroup.setOrientation(RadioGroup.VERTICAL);
+
+        final RadioButton wolRadio = new RadioButton(this);
+        wolRadio.setId(View.generateViewId());
+        wolRadio.setText(R.string.wake_method_wol);
+        wakeMethodGroup.addView(wolRadio);
+
+        final RadioButton httpRadio = new RadioButton(this);
+        httpRadio.setId(View.generateViewId());
+        httpRadio.setText(R.string.wake_method_http);
+        wakeMethodGroup.addView(httpRadio);
+
+        layout.addView(wakeMethodGroup);
+
+        // HTTP URL section
+        final LinearLayout httpSection = new LinearLayout(this);
+        httpSection.setOrientation(LinearLayout.VERTICAL);
+        httpSection.setPadding(0, padding, 0, 0);
+
+        TextView urlLabel = new TextView(this);
+        urlLabel.setText(R.string.http_wake_url_label);
+        httpSection.addView(urlLabel);
+
+        final EditText httpUrlEdit = new EditText(this);
+        httpUrlEdit.setHint(R.string.http_wake_url_hint);
+        httpUrlEdit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        httpUrlEdit.setSingleLine(true);
+        if (computer.httpWakeUrl != null) {
+            httpUrlEdit.setText(computer.httpWakeUrl);
+        }
+        httpSection.addView(httpUrlEdit);
+
+        TextView infoLabel = new TextView(this);
+        infoLabel.setText(R.string.http_wake_timeout_info);
+        infoLabel.setTextSize(12);
+        infoLabel.setPadding(0, padding / 2, 0, 0);
+        httpSection.addView(infoLabel);
+
+        layout.addView(httpSection);
+
+        // Initialize state
+        if (computer.wakeMethod == ComputerDetails.WakeMethod.HTTP) {
+            httpRadio.setChecked(true);
+            httpSection.setVisibility(View.VISIBLE);
+        } else {
+            wolRadio.setChecked(true);
+            httpSection.setVisibility(View.GONE);
+        }
+
+        // Toggle HTTP section visibility based on selection
+        wakeMethodGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                httpSection.setVisibility(checkedId == httpRadio.getId() ? View.VISIBLE : View.GONE);
+            }
+        });
+
+        builder.setView(layout);
+
+        builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                computer.wakeMethod = httpRadio.isChecked() ?
+                        ComputerDetails.WakeMethod.HTTP : ComputerDetails.WakeMethod.WOL;
+                computer.httpWakeUrl = httpUrlEdit.getText().toString().trim();
+
+                // Save to database
+                ComputerDatabaseManager dbManager = new ComputerDatabaseManager(PcView.this);
+                dbManager.updateComputer(computer);
+                dbManager.close();
+
+                // Update the in-memory computer in ComputerManagerService
+                if (managerBinder != null) {
+                    managerBinder.updateWakeConfig(computer);
+                }
+
+                Toast.makeText(PcView.this,
+                        getString(R.string.pcview_wake_config_saved),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        builder.setNegativeButton(android.R.string.cancel, null);
+        builder.show();
     }
 
     private void doUnpair(final ComputerDetails computer) {
@@ -673,6 +782,10 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
 
             case GAMESTREAM_EOL_ID:
                 HelpLauncher.launchGameStreamEolFaq(PcView.this);
+                return true;
+
+            case CONFIGURE_WAKE_ID:
+                showConfigureWakeDialog(computer.details);
                 return true;
 
             default:

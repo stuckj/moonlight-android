@@ -4,10 +4,18 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.MalformedURLException;
+import java.net.Proxy;
+import java.net.URL;
 import java.util.Scanner;
+import java.util.concurrent.TimeUnit;
 
 import com.limelight.LimeLog;
 import com.limelight.nvstream.http.ComputerDetails;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 public class WakeOnLanSender {
     // These ports will always be tried as-is.
@@ -58,6 +66,62 @@ public class WakeOnLanSender {
         }
     }
     
+    public static void sendWakePacket(ComputerDetails computer) throws IOException {
+        if (computer.wakeMethod == ComputerDetails.WakeMethod.HTTP) {
+            sendHttpWake(computer);
+        } else {
+            sendWolPacket(computer);
+        }
+    }
+
+    public static void sendHttpWake(ComputerDetails computer) throws IOException {
+        if (computer.httpWakeUrl == null || computer.httpWakeUrl.isEmpty()) {
+            LimeLog.warning("No HTTP wake URL configured for " + computer.name);
+            return;
+        }
+
+        String url = computer.httpWakeUrl;
+
+        // Validate URL
+        try {
+            new URL(url);
+        } catch (MalformedURLException e) {
+            LimeLog.warning("Invalid HTTP wake URL for " + computer.name);
+            throw new IOException("Invalid HTTP wake URL", e);
+        }
+
+        // Log URL with query params redacted for privacy
+        String redactedUrl = url;
+        int queryIndex = url.indexOf('?');
+        if (queryIndex >= 0) {
+            redactedUrl = url.substring(0, queryIndex) + "?***";
+        }
+        LimeLog.info("Sending HTTP wake request for " + computer.name + " to " + redactedUrl);
+
+        OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .proxy(Proxy.NO_PROXY)
+                .build();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            int statusCode = response.code();
+            if (statusCode >= 200 && statusCode < 300) {
+                LimeLog.info("HTTP wake request succeeded for " + computer.name + " (status " + statusCode + ")");
+            } else {
+                LimeLog.warning("HTTP wake request failed for " + computer.name + " (status " + statusCode + ")");
+            }
+        } catch (IOException e) {
+            LimeLog.warning("HTTP wake request failed for " + computer.name + ": " + e.getMessage());
+            throw e;
+        }
+    }
+
     public static void sendWolPacket(ComputerDetails computer) throws IOException {
         byte[] payload = createWolPayload(computer);
         IOException lastException = null;
