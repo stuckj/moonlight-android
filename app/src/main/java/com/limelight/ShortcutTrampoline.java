@@ -91,12 +91,15 @@ public class ShortcutTrampoline extends Activity {
                             }
 
                             // Try to wake the target PC if it's offline (up to some retry limit)
-                            if (details.state == ComputerDetails.State.OFFLINE && details.macAddress != null && --wakeHostTries >= 0) {
+                            // Wake can be attempted if MAC address is available (for WOL) or HTTP wake is configured
+                            if (details.state == ComputerDetails.State.OFFLINE &&
+                                    (details.macAddress != null || details.wakeMethod == ComputerDetails.WakeMethod.HTTP) &&
+                                    --wakeHostTries >= 0) {
                                 try {
                                     // Make a best effort attempt to wake the target PC
                                     WakeOnLanSender.sendWakePacket(computer);
 
-                                    // If we sent at least one WoL packet, reset the computer state
+                                    // If we sent at least one wake request, reset the computer state
                                     // to force ComputerManager to poll it again.
                                     managerBinder.invalidateStateForComputer(computer.uuid);
                                     return;

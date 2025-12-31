@@ -599,7 +599,11 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         // Error label for invalid URL (initially hidden)
         final TextView errorLabel = new TextView(this);
         errorLabel.setText(R.string.http_wake_url_invalid);
-        errorLabel.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            errorLabel.setTextColor(getResources().getColor(android.R.color.holo_red_dark, getTheme()));
+        } else {
+            errorLabel.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+        }
         errorLabel.setTextSize(12);
         errorLabel.setVisibility(View.GONE);
         httpSection.addView(errorLabel);
@@ -654,7 +658,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
 
                         computer.wakeMethod = httpRadio.isChecked() ?
                                 ComputerDetails.WakeMethod.HTTP : ComputerDetails.WakeMethod.WOL;
-                        computer.httpWakeUrl = httpUrl;
+                        // Clear httpWakeUrl when switching to WOL to avoid storing stale data
+                        computer.httpWakeUrl = httpRadio.isChecked() ? httpUrl : null;
 
                         // Save to database
                         ComputerDatabaseManager dbManager = new ComputerDatabaseManager(PcView.this);
