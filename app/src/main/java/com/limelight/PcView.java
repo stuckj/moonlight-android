@@ -519,15 +519,26 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             return;
         }
 
+        final boolean isHttpWake = computer.wakeMethod == ComputerDetails.WakeMethod.HTTP;
         new Thread(new Runnable() {
             @Override
             public void run() {
                 String message;
                 try {
                     WakeOnLanSender.sendWakePacket(computer);
-                    message = getResources().getString(R.string.wol_waking_msg);
+                    // Use appropriate success message based on wake method
+                    if (isHttpWake) {
+                        message = getResources().getString(R.string.http_wake_waking_msg);
+                    } else {
+                        message = getResources().getString(R.string.wol_waking_msg);
+                    }
                 } catch (IOException e) {
-                    message = getResources().getString(R.string.wol_fail);
+                    // Use appropriate error message based on wake method
+                    if (isHttpWake) {
+                        message = getResources().getString(R.string.http_wake_fail);
+                    } else {
+                        message = getResources().getString(R.string.wol_fail);
+                    }
                 }
 
                 final String toastMessage = message;
@@ -585,6 +596,14 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         }
         httpSection.addView(httpUrlEdit);
 
+        // Error label for invalid URL (initially hidden)
+        final TextView errorLabel = new TextView(this);
+        errorLabel.setText(R.string.http_wake_url_invalid);
+        errorLabel.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+        errorLabel.setTextSize(12);
+        errorLabel.setVisibility(View.GONE);
+        httpSection.addView(errorLabel);
+
         TextView infoLabel = new TextView(this);
         infoLabel.setText(R.string.http_wake_timeout_info);
         infoLabel.setTextSize(12);
@@ -607,36 +626,57 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
                 httpSection.setVisibility(checkedId == httpRadio.getId() ? View.VISIBLE : View.GONE);
+                errorLabel.setVisibility(View.GONE);
             }
         });
 
         builder.setView(layout);
 
-        builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+        // Set up buttons but override positive button behavior for validation
+        builder.setPositiveButton(android.R.string.ok, null);
+        builder.setNegativeButton(android.R.string.cancel, null);
+
+        final AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
             @Override
-            public void onClick(DialogInterface dialog, int which) {
-                computer.wakeMethod = httpRadio.isChecked() ?
-                        ComputerDetails.WakeMethod.HTTP : ComputerDetails.WakeMethod.WOL;
-                computer.httpWakeUrl = httpUrlEdit.getText().toString().trim();
+            public void onShow(DialogInterface dialogInterface) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String httpUrl = httpUrlEdit.getText().toString().trim();
 
-                // Save to database
-                ComputerDatabaseManager dbManager = new ComputerDatabaseManager(PcView.this);
-                dbManager.updateComputer(computer);
-                dbManager.close();
+                        // Validate URL when HTTP wake is selected
+                        if (httpRadio.isChecked() && !WakeOnLanSender.isValidWakeUrl(httpUrl)) {
+                            errorLabel.setVisibility(View.VISIBLE);
+                            httpUrlEdit.requestFocus();
+                            return;
+                        }
 
-                // Update the in-memory computer in ComputerManagerService
-                if (managerBinder != null) {
-                    managerBinder.updateWakeConfig(computer);
-                }
+                        computer.wakeMethod = httpRadio.isChecked() ?
+                                ComputerDetails.WakeMethod.HTTP : ComputerDetails.WakeMethod.WOL;
+                        computer.httpWakeUrl = httpUrl;
 
-                Toast.makeText(PcView.this,
-                        getString(R.string.pcview_wake_config_saved),
-                        Toast.LENGTH_SHORT).show();
+                        // Save to database
+                        ComputerDatabaseManager dbManager = new ComputerDatabaseManager(PcView.this);
+                        dbManager.updateComputer(computer);
+                        dbManager.close();
+
+                        // Update the in-memory computer in ComputerManagerService
+                        if (managerBinder != null) {
+                            managerBinder.updateWakeConfig(computer);
+                        }
+
+                        Toast.makeText(PcView.this,
+                                getString(R.string.pcview_wake_config_saved),
+                                Toast.LENGTH_SHORT).show();
+
+                        dialog.dismiss();
+                    }
+                });
             }
         });
 
-        builder.setNegativeButton(android.R.string.cancel, null);
-        builder.show();
+        dialog.show();
     }
 
     private void doUnpair(final ComputerDetails computer) {

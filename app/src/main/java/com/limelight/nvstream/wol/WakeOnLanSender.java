@@ -29,6 +29,40 @@ public class WakeOnLanSender {
         47998, 47999, 48000, 48002, 48010, // Ports opened by GFE
     };
 
+    // Shared OkHttpClient instance for HTTP wake requests
+    private static OkHttpClient httpClient;
+
+    private static synchronized OkHttpClient getHttpClient() {
+        if (httpClient == null) {
+            httpClient = new OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .proxy(Proxy.NO_PROXY)
+                    .build();
+        }
+        return httpClient;
+    }
+
+    /**
+     * Validates that a URL is suitable for HTTP wake.
+     * @param url The URL to validate
+     * @return true if the URL is valid (non-empty, valid format, http/https scheme, has host)
+     */
+    public static boolean isValidWakeUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        try {
+            URL parsedUrl = new URL(url);
+            String scheme = parsedUrl.getProtocol();
+            String host = parsedUrl.getHost();
+            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    && host != null && !host.isEmpty();
+        } catch (MalformedURLException e) {
+            return false;
+        }
+    }
+
     private static void sendPacketsForAddress(InetAddress address, int httpPort, DatagramSocket sock, byte[] payload) throws IOException {
         IOException lastException = null;
         boolean sentWolPacket = false;
@@ -77,39 +111,46 @@ public class WakeOnLanSender {
     public static void sendHttpWake(ComputerDetails computer) throws IOException {
         if (computer.httpWakeUrl == null || computer.httpWakeUrl.isEmpty()) {
             LimeLog.warning("No HTTP wake URL configured for " + computer.name);
-            return;
+            throw new IOException("No HTTP wake URL configured");
         }
 
         String url = computer.httpWakeUrl;
 
-        // Validate URL
-        try {
-            new URL(url);
-        } catch (MalformedURLException e) {
+        // Validate URL format, scheme, and host
+        if (!isValidWakeUrl(url)) {
             LimeLog.warning("Invalid HTTP wake URL for " + computer.name);
-            throw new IOException("Invalid HTTP wake URL", e);
+            throw new IOException("Invalid HTTP wake URL: must be a valid http or https URL with a host");
         }
 
-        // Log URL with query params redacted for privacy
-        String redactedUrl = url;
-        int queryIndex = url.indexOf('?');
-        if (queryIndex >= 0) {
-            redactedUrl = url.substring(0, queryIndex) + "?***";
+        // Log URL with query params and credentials redacted for privacy
+        String redactedUrl;
+        try {
+            URL parsedUrl = new URL(url);
+            StringBuilder sb = new StringBuilder();
+            sb.append(parsedUrl.getProtocol()).append("://");
+            if (parsedUrl.getUserInfo() != null && !parsedUrl.getUserInfo().isEmpty()) {
+                sb.append("***@");
+            }
+            sb.append(parsedUrl.getHost());
+            if (parsedUrl.getPort() != -1) {
+                sb.append(":").append(parsedUrl.getPort());
+            }
+            sb.append(parsedUrl.getPath());
+            if (parsedUrl.getQuery() != null) {
+                sb.append("?***");
+            }
+            redactedUrl = sb.toString();
+        } catch (MalformedURLException e) {
+            redactedUrl = "***";
         }
         LimeLog.info("Sending HTTP wake request for " + computer.name + " to " + redactedUrl);
-
-        OkHttpClient client = new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .proxy(Proxy.NO_PROXY)
-                .build();
 
         Request request = new Request.Builder()
                 .url(url)
                 .get()
                 .build();
 
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = getHttpClient().newCall(request).execute()) {
             int statusCode = response.code();
             if (statusCode >= 200 && statusCode < 300) {
                 LimeLog.info("HTTP wake request succeeded for " + computer.name + " (status " + statusCode + ")");

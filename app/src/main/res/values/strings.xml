@@ -60,7 +60,10 @@
     <string name="wake_method_http">HTTP Wake (for VPN/Tailscale)</string>
     <string name="http_wake_url_label">HTTP Wake URL:</string>
     <string name="http_wake_url_hint">https://example.com/wake</string>
-    <string name="http_wake_timeout_info">A simple HTTP GET request will be sent to this URL with a 10 second timeout.</string>
+    <string name="http_wake_url_invalid">Invalid URL. Please enter a valid HTTP or HTTPS URL.</string>
+    <string name="http_wake_timeout_info">A simple HTTP GET request with a 10-second timeout will be sent to this URL.</string>
+    <string name="http_wake_waking_msg">It may take a few seconds for your PC to wake up.</string>
+    <string name="http_wake_fail">Failed to send HTTP wake request</string>
     <string name="pcview_wake_config_saved">Wake configuration saved</string>
 
     <!-- Unpair messages -->
