@@ -156,6 +156,7 @@ public class WakeOnLanSender {
                 LimeLog.info("HTTP wake request succeeded for " + computer.name + " (status " + statusCode + ")");
             } else {
                 LimeLog.warning("HTTP wake request failed for " + computer.name + " (status " + statusCode + ")");
+                throw new IOException("HTTP wake request failed with status " + statusCode);
             }
         } catch (IOException e) {
             LimeLog.warning("HTTP wake request failed for " + computer.name + ": " + e.getMessage());

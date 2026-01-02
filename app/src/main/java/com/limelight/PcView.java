@@ -513,13 +513,19 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             return;
         }
 
+        final boolean isHttpWake = computer.wakeMethod == ComputerDetails.WakeMethod.HTTP;
+
         // MAC address is only required for standard WOL, not HTTP wake
-        if (computer.wakeMethod != ComputerDetails.WakeMethod.HTTP && computer.macAddress == null) {
+        if (!isHttpWake && computer.macAddress == null) {
             Toast.makeText(PcView.this, getResources().getString(R.string.wol_no_mac), Toast.LENGTH_SHORT).show();
             return;
         }
 
-        final boolean isHttpWake = computer.wakeMethod == ComputerDetails.WakeMethod.HTTP;
+        // For HTTP wake, ensure we have a valid URL
+        if (isHttpWake && !WakeOnLanSender.isValidWakeUrl(computer.httpWakeUrl)) {
+            Toast.makeText(PcView.this, getResources().getString(R.string.http_wake_fail), Toast.LENGTH_SHORT).show();
+            return;
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
