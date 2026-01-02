@@ -9,6 +9,11 @@ public class ComputerDetails {
         ONLINE, OFFLINE, UNKNOWN
     }
 
+    public enum WakeMethod {
+        WOL,    // Standard Wake-on-LAN (default)
+        HTTP    // HTTP GET request to configured URL
+    }
+
     public static class AddressTuple {
         public String address;
         public int port;
@@ -66,6 +71,8 @@ public class ComputerDetails {
     public AddressTuple ipv6Address;
     public String macAddress;
     public X509Certificate serverCert;
+    public WakeMethod wakeMethod = WakeMethod.WOL;
+    public String httpWakeUrl;
 
     // Transient attributes
     public State state;

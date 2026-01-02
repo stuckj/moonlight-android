@@ -303,6 +303,22 @@ public class ComputerManagerService extends Service {
                 }
             }
         }
+
+        public void updateWakeConfig(ComputerDetails computer) {
+            synchronized (pollingTuples) {
+                for (PollingTuple tuple : pollingTuples) {
+                    if (computer.uuid.equals(tuple.computer.uuid)) {
+                        // We need the network lock to prevent a concurrent poll
+                        // from wiping this change out
+                        synchronized (tuple.networkLock) {
+                            tuple.computer.wakeMethod = computer.wakeMethod;
+                            tuple.computer.httpWakeUrl = computer.httpWakeUrl;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     @Override
